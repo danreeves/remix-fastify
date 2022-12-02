@@ -7,7 +7,7 @@ import type {
   Response as NodeResponse,
 } from "@remix-run/node";
 import {
-  AbortController,
+  AbortController as NodeAbortController,
   createRequestHandler as createRemixRequestHandler,
   Headers as NodeHeaders,
   Request as NodeRequest,
@@ -46,11 +46,8 @@ export function createRequestHandler({
   let handleRequest = createRemixRequestHandler(build, mode);
 
   return async (request, reply) => {
-    let remixRequest = createRemixRequest(request);
-    let loadContext =
-      typeof getLoadContext === "function"
-        ? getLoadContext(request, reply)
-        : undefined;
+    let remixRequest = createRemixRequest(request, reply);
+    let loadContext = getLoadContext?.(request, reply);
 
     let response = (await handleRequest(
       remixRequest,
@@ -66,34 +63,41 @@ export function createRemixHeaders(
 ): NodeHeaders {
   let headers = new NodeHeaders();
 
-  for (let [header, values] of Object.entries(requestHeaders)) {
-    if (!values) continue;
-
-    if (Array.isArray(values)) {
-      for (let value of values) {
-        headers.append(header, value);
+  for (let [key, values] of Object.entries(requestHeaders)) {
+    if (values) {
+      if (Array.isArray(values)) {
+        for (let value of values) {
+          headers.append(key, value);
+        }
+      } else {
+        headers.set(key, values);
       }
-    } else {
-      headers.set(header, values);
     }
   }
 
   return headers;
 }
 
-export function createRemixRequest(request: FastifyRequest): NodeRequest {
+export function createRemixRequest(
+  request: FastifyRequest,
+  reply: FastifyReply
+): NodeRequest {
   let origin = `${request.protocol}://${request.hostname}`;
   let url = new URL(request.url, origin);
 
-  let controller = new AbortController();
+  // Abort action/loaders once we can no longer write a response
+  let controller = new NodeAbortController();
+  reply.raw.on("close", () => controller.abort());
 
   let init: NodeRequestInit = {
     method: request.method,
     headers: createRemixHeaders(request.headers),
-    signal: controller.signal as AbortSignal,
+    // Cast until reason/throwIfAborted added
+    // https://github.com/mysticatea/abort-controller/issues/36
+    signal: controller.signal as NodeRequestInit["signal"],
   };
 
-  if (request.method !== "GET" && request.method !== "HEAD") {
+  if (!["GET", "HEAD"].includes(request.method)) {
     init.body = request.raw;
   }
 
