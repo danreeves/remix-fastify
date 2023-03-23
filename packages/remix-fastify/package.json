@@ -28,7 +28,7 @@
     "prepublishOnly": "npm run build && publint",
     "dev": "tsup --watch",
     "build": "tsup",
-    "test": "jest"
+    "test": "vitest"
   },
   "dependencies": {
     "@fastify/static": "^6.9.0",
